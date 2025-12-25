@@ -1,252 +1,239 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Color Mixer</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Color Shake</title>
 
 <style>
   body {
-    margin: 0;
     font-family: system-ui, sans-serif;
     background: #111;
     color: #fff;
+    text-align: center;
+    margin: 0;
+    padding: 20px;
+  }
+
+  h1 { margin-bottom: 5px; }
+  #level { opacity: 0.8; margin-bottom: 15px; }
+
+  .row {
     display: flex;
     justify-content: center;
+    gap: 12px;
+    margin-bottom: 15px;
   }
 
-  .app {
-    width: 100%;
-    max-width: 420px;
-    padding: 16px;
-    text-align: center;
-  }
-
-  h1 { margin: 6px 0; }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin-bottom: 14px;
-  }
-
-  .box-wrap {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-  }
-
-  canvas {
+  .box {
     width: 90px;
     height: 90px;
     border-radius: 10px;
-    border: 3px solid #fff;
-    image-rendering: pixelated;
+    border: 2px solid #444;
   }
 
-  .label {
-    font-size: 11px;
-    opacity: 0.7;
+  #targetBox {
+    border: 3px solid gold;
   }
 
-  .container-wrap {
-    margin: 14px 0;
-  }
-
-  .buttons {
-    display: flex;
-    gap: 8px;
-    margin-top: 10px;
+  canvas {
+    background: #222;
+    border-radius: 12px;
+    margin-bottom: 15px;
+    border: 2px solid #444;
   }
 
   button {
-    flex: 1;
-    padding: 12px;
-    font-weight: 700;
+    padding: 12px 16px;
     border-radius: 10px;
     border: none;
+    font-size: 16px;
+    cursor: pointer;
   }
 
-  .reset { background: #fff; }
-  .enable { background: #ffd54f; }
+  .colorBtn {
+    width: 80px;
+    color: #000;
+    font-weight: bold;
+  }
 
-  .result {
+  #checkBtn { background: #00c853; color: #000; }
+  #resetBtn { background: #ff5252; color: #000; }
+
+  #message {
     margin-top: 10px;
-    min-height: 22px;
+    font-size: 18px;
+    min-height: 24px;
   }
 </style>
 </head>
 <body>
 
-<div class="app">
-  <h1>🎨 Color Mixer</h1>
+<h1>🎨 Color Shake</h1>
+<div id="level">Level 1</div>
 
-  <!-- SOURCE + TARGET BOXES -->
-  <div class="grid">
-    <div class="box-wrap">
-      <canvas id="redBox" width="16" height="16"></canvas>
-      <div class="label">Red</div>
-    </div>
-    <div class="box-wrap">
-      <canvas id="greenBox" width="16" height="16"></canvas>
-      <div class="label">Green</div>
-    </div>
-    <div class="box-wrap">
-      <canvas id="blueBox" width="16" height="16"></canvas>
-      <div class="label">Blue</div>
-    </div>
-
-    <div class="box-wrap" style="grid-column: span 3">
-      <canvas id="targetBox" width="16" height="16"></canvas>
-      <div class="label">Target</div>
-    </div>
+<div class="row">
+  <div>
+    <div>Target</div>
+    <div id="targetBox" class="box"></div>
   </div>
-
-  <!-- CONTAINER -->
-  <div class="container-wrap">
-    <canvas id="container" width="24" height="24"></canvas>
-    <div class="label">Container</div>
+  <div>
+    <div>Your Mix</div>
+    <div id="mixPreview" class="box"></div>
   </div>
-
-  <!-- CONTROLS -->
-  <div class="buttons">
-    <button id="rBtn" style="background:#f44336">R</button>
-    <button id="gBtn" style="background:#4caf50">G</button>
-    <button id="bBtn" style="background:#2196f3">B</button>
-  </div>
-
-  <div class="buttons">
-    <button class="enable" onclick="enableShake()">Enable Shake</button>
-    <button class="reset" onclick="resetContainer()">Reset</button>
-  </div>
-
-  <div class="result" id="result"></div>
 </div>
 
+<canvas id="canvas" width="240" height="240"></canvas>
+
+<div class="row">
+  <button class="colorBtn" id="redBtn" style="background:red">RED</button>
+  <button class="colorBtn" id="greenBtn" style="background:lime">GREEN</button>
+  <button class="colorBtn" id="blueBtn" style="background:cyan">BLUE</button>
+</div>
+
+<div class="row">
+  <button id="checkBtn">Check</button>
+  <button id="resetBtn">Reset</button>
+</div>
+
+<div id="message"></div>
+
 <script>
-/* ---------- CONFIG ---------- */
+/* ---------------- CONFIG ---------------- */
 const SIZE = 24;
-const MAX = SIZE * SIZE;
-const POUR_RATE = 3;
-const SHAKE_THRESHOLD = 30;
+const PIXELS = SIZE * SIZE;
+const SHAKE_THRESHOLD = 28;
 
-/* ---------- STATE ---------- */
+/* ---------------- STATE ---------------- */
+let level = 1;
+let target = randomTarget();
 let pixels = [];
-let pouring = null;
-let shakeEnabled = false;
-let settleTimer = null;
+let fillIndex = 0;
+let holding = null;
+let lastShake = 0;
 
-/* ---------- COLORS ---------- */
-const COLORS = {
-  r: { r:255, g:0, b:0 },
-  g: { r:0, g:255, b:0 },
-  b: { r:0, g:0, b:255 }
-};
+/* ---------------- SETUP ---------------- */
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const targetBox = document.getElementById("targetBox");
+const mixPreview = document.getElementById("mixPreview");
+const levelText = document.getElementById("level");
+const message = document.getElementById("message");
 
-/* ---------- CANVAS ---------- */
-const container = document.getElementById("container");
-const ctx = container.getContext("2d");
+resetPixels();
+updateUI();
 
-const targetColor = {
-  r: Math.random()*255,
-  g: Math.random()*255,
-  b: Math.random()*255
-};
+/* ---------------- COLOR BUTTON HOLD ---------------- */
+["red","green","blue"].forEach(color => {
+  const btn = document.getElementById(color + "Btn");
 
-function fillBox(id, color) {
-  const c = document.getElementById(id).getContext("2d");
-  c.fillStyle = `rgb(${color.r},${color.g},${color.b})`;
-  c.fillRect(0,0,16,16);
-}
+  btn.addEventListener("pointerdown", () => holding = color);
+  btn.addEventListener("pointerup", () => holding = null);
+  btn.addEventListener("pointerleave", () => holding = null);
+});
 
-fillBox("redBox", COLORS.r);
-fillBox("greenBox", COLORS.g);
-fillBox("blueBox", COLORS.b);
-fillBox("targetBox", targetColor);
+/* ---------------- FILL LOOP ---------------- */
+setInterval(() => {
+  if (!holding || fillIndex >= PIXELS) return;
 
-/* ---------- DRAW ---------- */
-function draw() {
-  ctx.clearRect(0,0,SIZE,SIZE);
-  pixels.forEach((p,i)=>{
-    const x = i % SIZE;
-    const y = SIZE - 1 - Math.floor(i / SIZE);
-    ctx.fillStyle = `rgb(${p.r},${p.g},${p.b})`;
-    ctx.fillRect(x,y,1,1);
-  });
-}
+  pixels[fillIndex++] = holding;
+  drawPixels();
+  updatePreview();
+}, 40);
 
-/* ---------- POUR ---------- */
-function pour(color) {
-  for (let i=0;i<POUR_RATE;i++) {
-    if (pixels.length >= MAX) return;
-    pixels.push({...color});
-  }
-  draw();
-}
-
-/* ---------- MIX ---------- */
-function mix() {
-  for (let i=0;i<pixels.length;i++) {
-    const j = Math.floor(Math.random()*pixels.length);
-    [pixels[i], pixels[j]] = [pixels[j], pixels[i]];
-  }
-  draw();
-}
-
-function settle() {
-  if (!pixels.length) return;
-  let r=0,g=0,b=0;
-  pixels.forEach(p=>{ r+=p.r; g+=p.g; b+=p.b; });
-  const avg = {
-    r:(r/pixels.length)|0,
-    g:(g/pixels.length)|0,
-    b:(b/pixels.length)|0
-  };
-  pixels = pixels.map(()=>avg);
-  draw();
-}
-
-/* ---------- SHAKE ---------- */
-function enableShake() {
-  if (typeof DeviceMotionEvent?.requestPermission === "function") {
-    DeviceMotionEvent.requestPermission().then(p=>{
-      if (p === "granted") shakeEnabled = true;
-    });
-  } else {
-    shakeEnabled = true;
-  }
-}
-
-window.addEventListener("devicemotion", e=>{
-  if (!shakeEnabled) return;
+/* ---------------- SHAKE MIXING ---------------- */
+window.addEventListener("devicemotion", e => {
   const a = e.accelerationIncludingGravity;
   if (!a) return;
-  const force = Math.abs(a.x)+Math.abs(a.y)+Math.abs(a.z);
-  if (force > SHAKE_THRESHOLD) {
-    mix();
-    clearTimeout(settleTimer);
-    settleTimer = setTimeout(settle, 500);
+
+  const force = Math.abs(a.x) + Math.abs(a.y) + Math.abs(a.z);
+  const now = Date.now();
+
+  if (force > SHAKE_THRESHOLD && now - lastShake > 700) {
+    shufflePixels();
+    lastShake = now;
   }
 });
 
-/* ---------- INPUT ---------- */
-function hold(btn, color) {
-  btn.addEventListener("pointerdown",()=>{
-    pouring = setInterval(()=>pour(color),50);
-  });
-  btn.addEventListener("pointerup",()=>clearInterval(pouring));
-  btn.addEventListener("pointerleave",()=>clearInterval(pouring));
+/* ---------------- BUTTONS ---------------- */
+document.getElementById("resetBtn").onclick = () => {
+  resetPixels();
+  message.textContent = "";
+};
+
+document.getElementById("checkBtn").onclick = checkMatch;
+
+/* ---------------- FUNCTIONS ---------------- */
+function randomTarget() {
+  return {
+    r: Math.floor(Math.random() * 256),
+    g: Math.floor(Math.random() * 256),
+    b: Math.floor(Math.random() * 256)
+  };
 }
 
-hold(rBtn, COLORS.r);
-hold(gBtn, COLORS.g);
-hold(bBtn, COLORS.b);
+function resetPixels() {
+  pixels = Array(PIXELS).fill(null);
+  fillIndex = 0;
+  drawPixels();
+  updatePreview();
+}
 
-function resetContainer() {
-  pixels = [];
-  draw();
+function drawPixels() {
+  const px = canvas.width / SIZE;
+
+  for (let i = 0; i < PIXELS; i++) {
+    const x = (i % SIZE) * px;
+    const y = Math.floor(i / SIZE) * px;
+    ctx.fillStyle = pixels[i] ? pixels[i] : "#222";
+    ctx.fillRect(x, y, px, px);
+  }
+}
+
+function shufflePixels() {
+  pixels.sort(() => Math.random() - 0.5);
+  drawPixels();
+  updatePreview();
+}
+
+function updatePreview() {
+  const counts = { red:0, green:0, blue:0 };
+  pixels.forEach(p => p && counts[p]++);
+
+  const total = counts.red + counts.green + counts.blue || 1;
+
+  const r = Math.round((counts.red / total) * 255);
+  const g = Math.round((counts.green / total) * 255);
+  const b = Math.round((counts.blue / total) * 255);
+
+  mixPreview.style.background = `rgb(${r},${g},${b})`;
+}
+
+function updateUI() {
+  levelText.textContent = `Level ${level}`;
+  targetBox.style.background = `rgb(${target.r},${target.g},${target.b})`;
+}
+
+function checkMatch() {
+  const mix = mixPreview.style.background.match(/\d+/g).map(Number);
+
+  const diff =
+    Math.abs(mix[0] - target.r) +
+    Math.abs(mix[1] - target.g) +
+    Math.abs(mix[2] - target.b);
+
+  const maxDiff = 255 * 3;
+  const accuracy = 100 - (diff / maxDiff) * 100;
+
+  if (accuracy >= 95) {
+    message.textContent = `🎉 Level Complete! (${accuracy.toFixed(1)}%)`;
+    level++;
+    target = randomTarget();
+    resetPixels();
+    updateUI();
+  } else {
+    message.textContent = `❌ ${accuracy.toFixed(1)}% — Keep Mixing`;
+  }
 }
 </script>
 
