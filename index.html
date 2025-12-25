@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Color Shake Mix</title>
+<title>Color Shake Mix - Seeded Levels</title>
 <style>
   body { font-family: system-ui; background:#111; color:#fff; text-align:center; margin:0; padding:20px;}
   h1{margin:5px;} #level{opacity:0.8; margin-bottom:10px;}
@@ -45,11 +45,9 @@
 const SIZE = 24;
 const PIXELS = SIZE*SIZE;
 const SHAKE_THRESHOLD = 28;
-const POUR_RATE = 3;
 
 /* ---------- STATE ---------- */
 let level = 1;
-let target = randomTarget();
 let pixels = Array(PIXELS).fill(null);
 let fillIndex = 0;
 let holding = null;
@@ -63,13 +61,43 @@ const levelText = document.getElementById("level");
 const message = document.getElementById("message");
 
 /* ---------- COLORS ---------- */
-const COLORS = {
-  r:{r:255,g:0,b:0},
-  g:{r:0,g:255,b:0},
-  b:{r:0,g:0,b:255}
-};
+const COLORS = { r:{r:255,g:0,b:0}, g:{r:0,g:255,b:0}, b:{r:0,g:0,b:255} };
+
+/* ---------- SEEDED RANDOM ---------- */
+function mulberry32(a) {
+  return function() {
+    var t = a += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+/* ---------- TARGET COLOR ---------- */
+function getTarget(level){
+  const rand = mulberry32(level); // deterministic per level
+  const primaryColors = ['r','g','b'];
+  
+  // pick primary color
+  const primaryIndex = Math.floor(rand()*3);
+  const primary = primaryColors[primaryIndex];
+  
+  // difficulty factor for secondary colors
+  const difficulty = Math.min(1, level/50); 
+  const secondary1 = (rand()*difficulty*255)|0;
+  const secondary2 = (rand()*difficulty*255)|0;
+
+  let target = {r:0,g:0,b:0};
+  target[primary] = 255; // primary full
+  const others = primaryColors.filter(c=>c!==primary);
+  target[others[0]] = secondary1;
+  target[others[1]] = secondary2;
+
+  return target;
+}
 
 /* ---------- INIT ---------- */
+let target = getTarget(level);
 fillCanvas(targetBox,target);
 updatePreview();
 drawContainer();
@@ -92,12 +120,15 @@ setInterval(()=>{
 },40);
 
 /* ---------- SHAKE ---------- */
+let lastShake=0;
 window.addEventListener("devicemotion", e=>{
   const a = e.accelerationIncludingGravity;
   if(!a) return;
   const force = Math.abs(a.x)+Math.abs(a.y)+Math.abs(a.z);
-  if(force>SHAKE_THRESHOLD){
+  const now = Date.now();
+  if(force>SHAKE_THRESHOLD && now-lastShake>700){
     mixContainer();
+    lastShake=now;
   }
 });
 
@@ -106,10 +137,6 @@ document.getElementById("resetBtn").onclick = resetContainer;
 document.getElementById("checkBtn").onclick = checkMatch;
 
 /* ---------- FUNCTIONS ---------- */
-function randomTarget(){
-  return {r:Math.floor(Math.random()*256), g:Math.floor(Math.random()*256), b:Math.floor(Math.random()*256)};
-}
-
 function fillCanvas(canvas,color){
   const c = canvas.getContext("2d");
   c.fillStyle = `rgb(${color.r},${color.g},${color.b})`;
@@ -122,13 +149,15 @@ function drawContainer(){
   for(let i=0;i<PIXELS;i++){
     const x = (i%SIZE)*px;
     const y = Math.floor(i/SIZE)*px;
-    const colorKey = pixels[i];
-    ctx.fillStyle = colorKey ? colorKeyToRgb(colorKey) : "#222";
+    const key = pixels[i];
+    ctx.fillStyle = key ? colorKeyToRgb(key) : "#222";
     ctx.fillRect(x,y,px,px);
   }
 }
 
-function colorKeyToRgb(key){ return `rgb(${COLORS[key].r},${COLORS[key].g},${COLORS[key].b})`; }
+function colorKeyToRgb(key){
+  return key==='avg' ? `rgb(${avgMix.r},${avgMix.g},${avgMix.b})` : `rgb(${COLORS[key].r},${COLORS[key].g},${COLORS[key].b})`;
+}
 
 function updatePreview(){
   let r=0,g=0,b=0,count=0;
@@ -138,10 +167,11 @@ function updatePreview(){
   }
   if(count>0){
     r=Math.round(r/count); g=Math.round(g/count); b=Math.round(b/count);
-    fillCanvas(mixPreview,{r,g,b});
-  } else fillCanvas(mixPreview,{r:0,g:0,b:0});
+  } else r=g=b=0;
+  fillCanvas(mixPreview,{r,g,b});
 }
 
+let avgMix={r:0,g:0,b:0};
 function mixContainer(){
   if(fillIndex===0) return;
   let r=0,g=0,b=0;
@@ -149,12 +179,24 @@ function mixContainer(){
     const c = COLORS[pixels[i]];
     r+=c.r; g+=c.g; b+=c.b;
   }
-  const avg = {r:Math.round(r/fillIndex),g:Math.round(g/fillIndex),b:Math.round(b/fillIndex)};
+  avgMix = {r:Math.round(r/fillIndex), g:Math.round(g/fillIndex), b:Math.round(b/fillIndex)};
+  for(let i=0;i<fillIndex;i++) pixels[i]='avg';
+  drawContainerUniform();
+  updatePreviewUniform();
+}
+
+function drawContainerUniform(){
+  const px = container.width/SIZE;
+  ctx.fillStyle = `rgb(${avgMix.r},${avgMix.g},${avgMix.b})`;
   for(let i=0;i<fillIndex;i++){
-    pixels[i] = avg; // store avg for simplicity in rendering
+    const x = (i%SIZE)*px;
+    const y = Math.floor(i/SIZE)*px;
+    ctx.fillRect(x,y,px,px);
   }
-  drawContainer();
-  updatePreview();
+}
+
+function updatePreviewUniform(){
+  fillCanvas(mixPreview,avgMix);
 }
 
 function resetContainer(){
@@ -171,10 +213,11 @@ function checkMatch(){
   const accuracy = 100-(diff/(255*3)*100);
   if(accuracy>=95){
     message.textContent=`🎉 Level Complete! (${accuracy.toFixed(1)}%)`;
-    level++; updateLevel();
-    target=randomTarget();
+    level++;
+    target = getTarget(level);
     fillCanvas(targetBox,target);
     resetContainer();
+    updateLevel();
   } else {
     message.textContent=`❌ ${accuracy.toFixed(1)}% — Keep Mixing`;
   }
