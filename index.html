@@ -2,221 +2,272 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Pixel Mix</title>
+<title>Pixel Paint Mix</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
 <style>
   body {
     margin: 0;
     font-family: system-ui, sans-serif;
-    background: #111;
+    background: #0f0f0f;
     color: #fff;
+    display: flex;
+    justify-content: center;
+  }
+
+  .app {
+    max-width: 420px;
+    width: 100%;
+    padding: 16px;
     text-align: center;
   }
 
-  h1 { margin: 10px 0; }
+  h1 {
+    margin: 8px 0 4px;
+  }
+
+  .level {
+    opacity: 0.8;
+    margin-bottom: 12px;
+  }
+
+  .canvases {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .canvas-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
 
   canvas {
-    border: 4px solid #fff;
-    border-radius: 8px;
+    border-radius: 12px;
+    border: 3px solid #fff;
     image-rendering: pixelated;
   }
 
-  .row {
+  .label {
+    font-size: 12px;
+    opacity: 0.8;
+  }
+
+  .controls {
     display: flex;
-    justify-content: center;
-    gap: 20px;
-    margin: 12px 0;
+    justify-content: space-between;
+    margin: 16px 0;
   }
 
   button {
+    flex: 1;
+    margin: 0 6px;
     padding: 14px;
-    font-size: 16px;
-    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 12px;
     border: none;
-    width: 120px;
+    color: #000;
+  }
+
+  .submit {
+    width: 100%;
+    margin-top: 10px;
+    padding: 14px;
+    border-radius: 14px;
+    background: #fff;
+    color: #000;
+    font-weight: 700;
+  }
+
+  .hint {
+    font-size: 12px;
+    opacity: 0.6;
+    margin-top: 6px;
   }
 
   .result {
     margin-top: 10px;
     font-size: 18px;
+    min-height: 22px;
   }
 </style>
 </head>
 <body>
 
-<h1>🎨 Pixel Mix</h1>
-<div>Level <span id="level">1</span></div>
+<div class="app">
+  <h1>🎨 Pixel Paint</h1>
+  <div class="level">Level <span id="level">1</span></div>
 
-<div class="row">
-  <canvas id="target" width="80" height="80"></canvas>
-  <canvas id="mix" width="80" height="80"></canvas>
+  <div class="canvases">
+    <div class="canvas-wrap">
+      <canvas id="target" width="60" height="60"></canvas>
+      <div class="label">Target</div>
+    </div>
+
+    <div class="canvas-wrap">
+      <canvas id="mix" width="60" height="60"></canvas>
+      <div class="label">Your Mix</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="btnA">Pour</button>
+    <button id="btnB">Pour</button>
+  </div>
+
+  <button class="submit" onclick="submit()">Submit Match</button>
+
+  <div class="hint">Hold buttons to pour · Shake phone to mix</div>
+  <div class="result" id="result"></div>
 </div>
-
-<div class="row">
-  <button id="btnA">Hold</button>
-  <button id="btnB">Hold</button>
-</div>
-
-<button onclick="submit()">Submit</button>
-
-<div class="result" id="result"></div>
 
 <script>
-/* ---------------- CONFIG ---------------- */
-const SIZE = 20;                 // grid width/height (pixels)
-const PIXEL_SIZE = 4;            // visual scale
-const POUR_RATE = 6;             // pixels per tick
-const MIX_RATE = 120;            // random swaps per frame
-const MAX_PIXELS = SIZE * SIZE;
+/* ------------ CONFIG ------------ */
+const GRID = 30;
+const POUR_PIXELS = 4;
+const BASE_MIX_RATE = 40;
+const MAX_PIXELS = GRID * GRID;
 
-/* ---------------- STATE ---------------- */
+/* ------------ STATE ------------ */
 let level = 1;
 let grid = [];
-let targetColor = {};
-let pouring = null;
+let targetColor;
 let colors = [];
+let pouringInterval = null;
+let mixBoost = 1;
 
-/* ---------------- CANVAS SETUP ---------------- */
+/* ------------ CANVAS ------------ */
 const mixCanvas = document.getElementById("mix");
 const targetCanvas = document.getElementById("target");
 
-mixCanvas.width = targetCanvas.width = SIZE;
-mixCanvas.height = targetCanvas.height = SIZE;
+mixCanvas.width = targetCanvas.width = GRID;
+mixCanvas.height = targetCanvas.height = GRID;
 
-mixCanvas.style.width = targetCanvas.style.width = SIZE * PIXEL_SIZE + "px";
-mixCanvas.style.height = targetCanvas.style.height = SIZE * PIXEL_SIZE + "px";
+mixCanvas.style.width = targetCanvas.style.width = "180px";
+mixCanvas.style.height = targetCanvas.style.height = "180px";
 
 const mixCtx = mixCanvas.getContext("2d");
 const targetCtx = targetCanvas.getContext("2d");
 
-/* ---------------- UTIL ---------------- */
-const randColor = () => ({
-  r: Math.random() * 255,
-  g: Math.random() * 255,
-  b: Math.random() * 255
-});
-
-const colorStr = c => `rgb(${c.r|0},${c.g|0},${c.b|0})`;
+/* ------------ UTILS ------------ */
+const rand = () => Math.random() * 255;
+const rgb = c => `rgb(${c.r|0},${c.g|0},${c.b|0})`;
 
 function avgColor() {
-  let r = 0, g = 0, b = 0;
-  grid.forEach(p => {
-    r += p.r;
-    g += p.g;
-    b += p.b;
-  });
-  return {
-    r: r / grid.length,
-    g: g / grid.length,
-    b: b / grid.length
-  };
+  let r=0,g=0,b=0;
+  grid.forEach(p => { r+=p.r; g+=p.g; b+=p.b; });
+  return { r:r/grid.length, g:g/grid.length, b:b/grid.length };
 }
 
-function diff(a, b) {
-  return Math.abs(a.r - b.r) +
-         Math.abs(a.g - b.g) +
-         Math.abs(a.b - b.b);
+function diff(a,b) {
+  return Math.abs(a.r-b.r)+Math.abs(a.g-b.g)+Math.abs(a.b-b.b);
 }
 
-/* ---------------- LEVEL SETUP ---------------- */
+/* ------------ LEVEL ------------ */
 function startLevel() {
   document.getElementById("level").textContent = level;
   document.getElementById("result").textContent = "";
 
   grid = [];
-  targetColor = randColor();
+  mixBoost = 1;
 
-  colors = [randColor(), randColor()];
-  if (level > 25) colors.push(randColor());
+  targetColor = { r: rand(), g: rand(), b: rand() };
+  targetCtx.fillStyle = rgb(targetColor);
+  targetCtx.fillRect(0,0,GRID,GRID);
 
-  drawTarget();
+  colors = [
+    { r: rand(), g: rand(), b: rand() },
+    { r: rand(), g: rand(), b: rand() }
+  ];
 
-  document.getElementById("btnA").style.background = colorStr(colors[0]);
-  document.getElementById("btnB").style.background = colorStr(colors[1]);
+  btnA.style.background = rgb(colors[0]);
+  btnB.style.background = rgb(colors[1]);
 
   render();
 }
 
-/* ---------------- DRAWING ---------------- */
-function drawTarget() {
-  targetCtx.fillStyle = colorStr(targetColor);
-  targetCtx.fillRect(0, 0, SIZE, SIZE);
-}
-
-function render() {
-  mixCtx.clearRect(0, 0, SIZE, SIZE);
-  grid.forEach(p => {
-    mixCtx.fillStyle = colorStr(p);
-    mixCtx.fillRect(p.x, p.y, 1, 1);
-  });
-}
-
-/* ---------------- POURING ---------------- */
+/* ------------ POUR ------------ */
 function pour(color) {
-  for (let i = 0; i < POUR_RATE; i++) {
+  for (let i=0;i<POUR_PIXELS;i++) {
     if (grid.length >= MAX_PIXELS) return;
-
     grid.push({
-      x: grid.length % SIZE,
-      y: Math.floor(grid.length / SIZE),
-      r: color.r,
-      g: color.g,
-      b: color.b
+      x: grid.length % GRID,
+      y: Math.floor(grid.length / GRID),
+      ...color
     });
   }
 }
 
-/* ---------------- MIXING (PIXEL DIFFUSION) ---------------- */
+/* ------------ MIXING (SHAKE-AFFECTED) ------------ */
 function mixPixels() {
-  for (let i = 0; i < MIX_RATE; i++) {
+  const swaps = BASE_MIX_RATE * mixBoost;
+  for (let i=0;i<swaps;i++) {
     if (grid.length < 2) return;
-    const a = Math.floor(Math.random() * grid.length);
-    const b = Math.floor(Math.random() * grid.length);
-    [grid[a].x, grid[b].x] = [grid[b].x, grid[a].x];
-    [grid[a].y, grid[b].y] = [grid[b].y, grid[a].y];
+    const a = Math.floor(Math.random()*grid.length);
+    const b = Math.floor(Math.random()*grid.length);
+    [grid[a].x,grid[b].x] = [grid[b].x,grid[a].x];
+    [grid[a].y,grid[b].y] = [grid[b].y,grid[a].y];
   }
+  mixBoost *= 0.97; // decay shake influence
 }
 
-/* ---------------- GAME LOOP ---------------- */
+/* ------------ RENDER ------------ */
+function render() {
+  mixCtx.clearRect(0,0,GRID,GRID);
+  grid.forEach(p => {
+    mixCtx.fillStyle = rgb(p);
+    mixCtx.fillRect(p.x,p.y,1,1);
+  });
+}
+
+/* ------------ LOOP ------------ */
 function loop() {
   mixPixels();
   render();
   requestAnimationFrame(loop);
 }
 
-/* ---------------- SUBMIT ---------------- */
+/* ------------ SUBMIT ------------ */
 function submit() {
   if (grid.length < MAX_PIXELS * 0.7) {
-    document.getElementById("result").textContent = "Fill more!";
+    document.getElementById("result").textContent = "Fill the palette more";
     return;
   }
 
-  const mixed = avgColor();
-  const tolerance = Math.max(70 - level, 30);
-
-  if (diff(mixed, targetColor) < tolerance) {
-    document.getElementById("result").textContent = "✔ Level Complete";
+  const tolerance = Math.max(80 - level, 30);
+  if (diff(avgColor(), targetColor) <= tolerance) {
+    document.getElementById("result").textContent = "✔ Match!";
     level++;
     setTimeout(startLevel, 900);
   } else {
-    document.getElementById("result").textContent = "✖ Off Color";
+    document.getElementById("result").textContent = "✖ Not quite";
   }
 }
 
-/* ---------------- INPUT ---------------- */
-["btnA", "btnB"].forEach((id, idx) => {
+/* ------------ INPUT ------------ */
+["btnA","btnB"].forEach((id,i)=>{
   const btn = document.getElementById(id);
-
-  btn.addEventListener("pointerdown", () => {
-    pouring = setInterval(() => pour(colors[idx]), 50);
+  btn.addEventListener("pointerdown",()=> {
+    pouringInterval = setInterval(()=>pour(colors[i]),50);
   });
-
-  btn.addEventListener("pointerup", () => clearInterval(pouring));
-  btn.addEventListener("pointerleave", () => clearInterval(pouring));
+  btn.addEventListener("pointerup",()=>clearInterval(pouringInterval));
+  btn.addEventListener("pointerleave",()=>clearInterval(pouringInterval));
 });
 
-/* ---------------- START ---------------- */
+/* ------------ SHAKE ------------ */
+if (window.DeviceMotionEvent) {
+  window.addEventListener("devicemotion", e => {
+    const a = e.accelerationIncludingGravity;
+    if (!a) return;
+    const force = Math.abs(a.x)+Math.abs(a.y)+Math.abs(a.z);
+    if (force > 28) mixBoost = Math.min(4, mixBoost + 0.5);
+  });
+}
+
+/* ------------ START ------------ */
 startLevel();
 loop();
 </script>
