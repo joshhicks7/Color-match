@@ -1,89 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Color Shake</title>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Color Shake Mix</title>
 <style>
-  body {
-    font-family: system-ui, sans-serif;
-    background: #111;
-    color: #fff;
-    text-align: center;
-    margin: 0;
-    padding: 20px;
-  }
-
-  h1 { margin-bottom: 5px; }
-  #level { opacity: 0.8; margin-bottom: 15px; }
-
-  .row {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    margin-bottom: 15px;
-  }
-
-  .box {
-    width: 90px;
-    height: 90px;
-    border-radius: 10px;
-    border: 2px solid #444;
-  }
-
-  #targetBox {
-    border: 3px solid gold;
-  }
-
-  canvas {
-    background: #222;
-    border-radius: 12px;
-    margin-bottom: 15px;
-    border: 2px solid #444;
-  }
-
-  button {
-    padding: 12px 16px;
-    border-radius: 10px;
-    border: none;
-    font-size: 16px;
-    cursor: pointer;
-  }
-
-  .colorBtn {
-    width: 80px;
-    color: #000;
-    font-weight: bold;
-  }
-
-  #checkBtn { background: #00c853; color: #000; }
-  #resetBtn { background: #ff5252; color: #000; }
-
-  #message {
-    margin-top: 10px;
-    font-size: 18px;
-    min-height: 24px;
-  }
+  body { font-family: system-ui; background:#111; color:#fff; text-align:center; margin:0; padding:20px;}
+  h1{margin:5px;} #level{opacity:0.8; margin-bottom:10px;}
+  canvas{border:2px solid #444; border-radius:10px; background:#222; image-rendering:pixelated;}
+  .row{display:flex; justify-content:center; gap:12px; margin-bottom:12px;}
+  button{padding:12px 16px; border-radius:10px; border:none; cursor:pointer; font-weight:bold;}
+  .colorBtn{width:80px;color:#000;}
+  #checkBtn{background:#00c853;color:#000;} #resetBtn{background:#ff5252;color:#000;}
+  #message{margin-top:10px; min-height:24px; font-size:18px;}
 </style>
 </head>
 <body>
 
-<h1>🎨 Color Shake</h1>
+<h1>🎨 Color Shake Mix</h1>
 <div id="level">Level 1</div>
 
 <div class="row">
-  <div>
-    <div>Target</div>
-    <div id="targetBox" class="box"></div>
-  </div>
-  <div>
-    <div>Your Mix</div>
-    <div id="mixPreview" class="box"></div>
-  </div>
+  <canvas id="targetBox" width="60" height="60"></canvas>
+  <canvas id="mixPreview" width="60" height="60"></canvas>
 </div>
 
-<canvas id="canvas" width="240" height="240"></canvas>
+<canvas id="container" width="240" height="240"></canvas>
 
 <div class="row">
   <button class="colorBtn" id="redBtn" style="background:red">RED</button>
@@ -99,142 +41,146 @@
 <div id="message"></div>
 
 <script>
-/* ---------------- CONFIG ---------------- */
+/* ---------- CONFIG ---------- */
 const SIZE = 24;
-const PIXELS = SIZE * SIZE;
+const PIXELS = SIZE*SIZE;
 const SHAKE_THRESHOLD = 28;
+const POUR_RATE = 3;
 
-/* ---------------- STATE ---------------- */
+/* ---------- STATE ---------- */
 let level = 1;
 let target = randomTarget();
-let pixels = [];
+let pixels = Array(PIXELS).fill(null);
 let fillIndex = 0;
 let holding = null;
-let lastShake = 0;
 
-/* ---------------- SETUP ---------------- */
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+/* ---------- CANVAS ---------- */
+const container = document.getElementById("container");
+const ctx = container.getContext("2d");
 const targetBox = document.getElementById("targetBox");
 const mixPreview = document.getElementById("mixPreview");
 const levelText = document.getElementById("level");
 const message = document.getElementById("message");
 
-resetPixels();
-updateUI();
-
-/* ---------------- COLOR BUTTON HOLD ---------------- */
-["red","green","blue"].forEach(color => {
-  const btn = document.getElementById(color + "Btn");
-
-  btn.addEventListener("pointerdown", () => holding = color);
-  btn.addEventListener("pointerup", () => holding = null);
-  btn.addEventListener("pointerleave", () => holding = null);
-});
-
-/* ---------------- FILL LOOP ---------------- */
-setInterval(() => {
-  if (!holding || fillIndex >= PIXELS) return;
-
-  pixels[fillIndex++] = holding;
-  drawPixels();
-  updatePreview();
-}, 40);
-
-/* ---------------- SHAKE MIXING ---------------- */
-window.addEventListener("devicemotion", e => {
-  const a = e.accelerationIncludingGravity;
-  if (!a) return;
-
-  const force = Math.abs(a.x) + Math.abs(a.y) + Math.abs(a.z);
-  const now = Date.now();
-
-  if (force > SHAKE_THRESHOLD && now - lastShake > 700) {
-    shufflePixels();
-    lastShake = now;
-  }
-});
-
-/* ---------------- BUTTONS ---------------- */
-document.getElementById("resetBtn").onclick = () => {
-  resetPixels();
-  message.textContent = "";
+/* ---------- COLORS ---------- */
+const COLORS = {
+  r:{r:255,g:0,b:0},
+  g:{r:0,g:255,b:0},
+  b:{r:0,g:0,b:255}
 };
 
+/* ---------- INIT ---------- */
+fillCanvas(targetBox,target);
+updatePreview();
+drawContainer();
+updateLevel();
+
+/* ---------- HOLD BUTTONS ---------- */
+["red","green","blue"].forEach(c=>{
+  const btn = document.getElementById(c+"Btn");
+  btn.addEventListener("pointerdown",()=>holding=c);
+  btn.addEventListener("pointerup",()=>holding=null);
+  btn.addEventListener("pointerleave",()=>holding=null);
+});
+
+/* ---------- FILL LOOP ---------- */
+setInterval(()=>{
+  if(!holding || fillIndex>=PIXELS) return;
+  pixels[fillIndex++] = holding;
+  drawContainer();
+  updatePreview();
+},40);
+
+/* ---------- SHAKE ---------- */
+window.addEventListener("devicemotion", e=>{
+  const a = e.accelerationIncludingGravity;
+  if(!a) return;
+  const force = Math.abs(a.x)+Math.abs(a.y)+Math.abs(a.z);
+  if(force>SHAKE_THRESHOLD){
+    mixContainer();
+  }
+});
+
+/* ---------- BUTTONS ---------- */
+document.getElementById("resetBtn").onclick = resetContainer;
 document.getElementById("checkBtn").onclick = checkMatch;
 
-/* ---------------- FUNCTIONS ---------------- */
-function randomTarget() {
-  return {
-    r: Math.floor(Math.random() * 256),
-    g: Math.floor(Math.random() * 256),
-    b: Math.floor(Math.random() * 256)
-  };
+/* ---------- FUNCTIONS ---------- */
+function randomTarget(){
+  return {r:Math.floor(Math.random()*256), g:Math.floor(Math.random()*256), b:Math.floor(Math.random()*256)};
 }
 
-function resetPixels() {
+function fillCanvas(canvas,color){
+  const c = canvas.getContext("2d");
+  c.fillStyle = `rgb(${color.r},${color.g},${color.b})`;
+  c.fillRect(0,0,canvas.width,canvas.height);
+}
+
+function drawContainer(){
+  const px = container.width/SIZE;
+  ctx.clearRect(0,0,container.width,container.height);
+  for(let i=0;i<PIXELS;i++){
+    const x = (i%SIZE)*px;
+    const y = Math.floor(i/SIZE)*px;
+    const colorKey = pixels[i];
+    ctx.fillStyle = colorKey ? colorKeyToRgb(colorKey) : "#222";
+    ctx.fillRect(x,y,px,px);
+  }
+}
+
+function colorKeyToRgb(key){ return `rgb(${COLORS[key].r},${COLORS[key].g},${COLORS[key].b})`; }
+
+function updatePreview(){
+  let r=0,g=0,b=0,count=0;
+  for(let i=0;i<fillIndex;i++){
+    const c = COLORS[pixels[i]];
+    r+=c.r; g+=c.g; b+=c.b; count++;
+  }
+  if(count>0){
+    r=Math.round(r/count); g=Math.round(g/count); b=Math.round(b/count);
+    fillCanvas(mixPreview,{r,g,b});
+  } else fillCanvas(mixPreview,{r:0,g:0,b:0});
+}
+
+function mixContainer(){
+  if(fillIndex===0) return;
+  let r=0,g=0,b=0;
+  for(let i=0;i<fillIndex;i++){
+    const c = COLORS[pixels[i]];
+    r+=c.r; g+=c.g; b+=c.b;
+  }
+  const avg = {r:Math.round(r/fillIndex),g:Math.round(g/fillIndex),b:Math.round(b/fillIndex)};
+  for(let i=0;i<fillIndex;i++){
+    pixels[i] = avg; // store avg for simplicity in rendering
+  }
+  drawContainer();
+  updatePreview();
+}
+
+function resetContainer(){
   pixels = Array(PIXELS).fill(null);
-  fillIndex = 0;
-  drawPixels();
+  fillIndex=0;
+  drawContainer();
   updatePreview();
+  message.textContent="";
 }
 
-function drawPixels() {
-  const px = canvas.width / SIZE;
-
-  for (let i = 0; i < PIXELS; i++) {
-    const x = (i % SIZE) * px;
-    const y = Math.floor(i / SIZE) * px;
-    ctx.fillStyle = pixels[i] ? pixels[i] : "#222";
-    ctx.fillRect(x, y, px, px);
-  }
-}
-
-function shufflePixels() {
-  pixels.sort(() => Math.random() - 0.5);
-  drawPixels();
-  updatePreview();
-}
-
-function updatePreview() {
-  const counts = { red:0, green:0, blue:0 };
-  pixels.forEach(p => p && counts[p]++);
-
-  const total = counts.red + counts.green + counts.blue || 1;
-
-  const r = Math.round((counts.red / total) * 255);
-  const g = Math.round((counts.green / total) * 255);
-  const b = Math.round((counts.blue / total) * 255);
-
-  mixPreview.style.background = `rgb(${r},${g},${b})`;
-}
-
-function updateUI() {
-  levelText.textContent = `Level ${level}`;
-  targetBox.style.background = `rgb(${target.r},${target.g},${target.b})`;
-}
-
-function checkMatch() {
-  const mix = mixPreview.style.background.match(/\d+/g).map(Number);
-
-  const diff =
-    Math.abs(mix[0] - target.r) +
-    Math.abs(mix[1] - target.g) +
-    Math.abs(mix[2] - target.b);
-
-  const maxDiff = 255 * 3;
-  const accuracy = 100 - (diff / maxDiff) * 100;
-
-  if (accuracy >= 95) {
-    message.textContent = `🎉 Level Complete! (${accuracy.toFixed(1)}%)`;
-    level++;
-    target = randomTarget();
-    resetPixels();
-    updateUI();
+function checkMatch(){
+  const mix = mixPreview.getContext("2d").getImageData(0,0,1,1).data;
+  const diff = Math.abs(mix[0]-target.r)+Math.abs(mix[1]-target.g)+Math.abs(mix[2]-target.b);
+  const accuracy = 100-(diff/(255*3)*100);
+  if(accuracy>=95){
+    message.textContent=`🎉 Level Complete! (${accuracy.toFixed(1)}%)`;
+    level++; updateLevel();
+    target=randomTarget();
+    fillCanvas(targetBox,target);
+    resetContainer();
   } else {
-    message.textContent = `❌ ${accuracy.toFixed(1)}% — Keep Mixing`;
+    message.textContent=`❌ ${accuracy.toFixed(1)}% — Keep Mixing`;
   }
 }
+
+function updateLevel(){ levelText.textContent=`Level ${level}`; }
 </script>
 
 </body>
