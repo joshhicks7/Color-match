@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Pixel Paint Mix</title>
+<title>Color Container</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
 <style>
   body {
     margin: 0;
     font-family: system-ui, sans-serif;
-    background: #0f0f0f;
+    background: #111;
     color: #fff;
     display: flex;
     justify-content: center;
@@ -22,22 +22,15 @@
     text-align: center;
   }
 
-  h1 {
-    margin: 8px 0 4px;
-  }
+  h1 { margin: 8px 0; }
 
-  .level {
-    opacity: 0.8;
-    margin-bottom: 12px;
-  }
-
-  .canvases {
+  .row {
     display: flex;
     justify-content: space-between;
     margin-bottom: 12px;
   }
 
-  .canvas-wrap {
+  .box-wrap {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -45,8 +38,8 @@
   }
 
   canvas {
-    border-radius: 12px;
     border: 3px solid #fff;
+    border-radius: 10px;
     image-rendering: pixelated;
   }
 
@@ -57,29 +50,23 @@
 
   .controls {
     display: flex;
-    justify-content: space-between;
-    margin: 16px 0;
+    gap: 8px;
+    margin: 14px 0;
   }
 
   button {
     flex: 1;
-    margin: 0 6px;
     padding: 14px;
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 700;
     border-radius: 12px;
     border: none;
     color: #000;
   }
 
-  .submit {
-    width: 100%;
-    margin-top: 10px;
-    padding: 14px;
-    border-radius: 14px;
+  .reset {
     background: #fff;
-    color: #000;
-    font-weight: 700;
+    margin-top: 8px;
   }
 
   .hint {
@@ -98,178 +85,192 @@
 <body>
 
 <div class="app">
-  <h1>🎨 Pixel Paint</h1>
-  <div class="level">Level <span id="level">1</span></div>
+  <h1>🎨 Color Container</h1>
+  <div>Level <span id="level">1</span></div>
 
-  <div class="canvases">
-    <div class="canvas-wrap">
-      <canvas id="target" width="60" height="60"></canvas>
+  <div class="row">
+    <div class="box-wrap">
+      <canvas id="target" width="40" height="40"></canvas>
       <div class="label">Target</div>
     </div>
 
-    <div class="canvas-wrap">
-      <canvas id="mix" width="60" height="60"></canvas>
-      <div class="label">Your Mix</div>
+    <div class="box-wrap">
+      <canvas id="container" width="40" height="40"></canvas>
+      <div class="label">Container</div>
     </div>
   </div>
 
   <div class="controls">
-    <button id="btnA">Pour</button>
-    <button id="btnB">Pour</button>
+    <button id="redBtn">RED</button>
+    <button id="greenBtn">GREEN</button>
+    <button id="blueBtn">BLUE</button>
   </div>
 
-  <button class="submit" onclick="submit()">Submit Match</button>
+  <button class="reset" onclick="resetContainer()">Reset</button>
 
-  <div class="hint">Hold buttons to pour · Shake phone to mix</div>
+  <button class="reset" onclick="submit()">Submit</button>
+
+  <div class="hint">Hold color to fill · Shake to mix</div>
   <div class="result" id="result"></div>
 </div>
 
 <script>
-/* ------------ CONFIG ------------ */
-const GRID = 30;
-const POUR_PIXELS = 4;
-const BASE_MIX_RATE = 40;
-const MAX_PIXELS = GRID * GRID;
+/* ---------- CONFIG ---------- */
+const SIZE = 40;
+const MAX_PIXELS = SIZE * SIZE;
+const POUR_RATE = 4;
+const SHAKE_THRESHOLD = 28;
 
-/* ------------ STATE ------------ */
+/* ---------- STATE ---------- */
 let level = 1;
-let grid = [];
+let pixels = [];
 let targetColor;
-let colors = [];
-let pouringInterval = null;
-let mixBoost = 1;
+let pouring = null;
+let shaking = false;
+let settleTimeout = null;
 
-/* ------------ CANVAS ------------ */
-const mixCanvas = document.getElementById("mix");
+/* ---------- CANVAS ---------- */
 const targetCanvas = document.getElementById("target");
+const containerCanvas = document.getElementById("container");
+const tCtx = targetCanvas.getContext("2d");
+const cCtx = containerCanvas.getContext("2d");
 
-mixCanvas.width = targetCanvas.width = GRID;
-mixCanvas.height = targetCanvas.height = GRID;
+/* ---------- COLORS ---------- */
+const COLORS = {
+  red:   { r:255, g:0,   b:0 },
+  green: { r:0,   g:255, b:0 },
+  blue:  { r:0,   g:0,   b:255 }
+};
 
-mixCanvas.style.width = targetCanvas.style.width = "180px";
-mixCanvas.style.height = targetCanvas.style.height = "180px";
-
-const mixCtx = mixCanvas.getContext("2d");
-const targetCtx = targetCanvas.getContext("2d");
-
-/* ------------ UTILS ------------ */
-const rand = () => Math.random() * 255;
-const rgb = c => `rgb(${c.r|0},${c.g|0},${c.b|0})`;
-
-function avgColor() {
-  let r=0,g=0,b=0;
-  grid.forEach(p => { r+=p.r; g+=p.g; b+=p.b; });
-  return { r:r/grid.length, g:g/grid.length, b:b/grid.length };
+function rgb(c) {
+  return `rgb(${c.r},${c.g},${c.b})`;
 }
 
-function diff(a,b) {
-  return Math.abs(a.r-b.r)+Math.abs(a.g-b.g)+Math.abs(a.b-b.b);
-}
-
-/* ------------ LEVEL ------------ */
+/* ---------- LEVEL ---------- */
 function startLevel() {
   document.getElementById("level").textContent = level;
   document.getElementById("result").textContent = "";
 
-  grid = [];
-  mixBoost = 1;
+  targetColor = {
+    r: Math.random()*255,
+    g: Math.random()*255,
+    b: Math.random()*255
+  };
 
-  targetColor = { r: rand(), g: rand(), b: rand() };
-  targetCtx.fillStyle = rgb(targetColor);
-  targetCtx.fillRect(0,0,GRID,GRID);
+  tCtx.fillStyle = rgb(targetColor);
+  tCtx.fillRect(0,0,SIZE,SIZE);
 
-  colors = [
-    { r: rand(), g: rand(), b: rand() },
-    { r: rand(), g: rand(), b: rand() }
-  ];
-
-  btnA.style.background = rgb(colors[0]);
-  btnB.style.background = rgb(colors[1]);
-
-  render();
+  resetContainer();
 }
 
-/* ------------ POUR ------------ */
-function pour(color) {
-  for (let i=0;i<POUR_PIXELS;i++) {
-    if (grid.length >= MAX_PIXELS) return;
-    grid.push({
-      x: grid.length % GRID,
-      y: Math.floor(grid.length / GRID),
-      ...color
-    });
-  }
+/* ---------- CONTAINER ---------- */
+function resetContainer() {
+  pixels = [];
+  drawContainer();
 }
 
-/* ------------ MIXING (SHAKE-AFFECTED) ------------ */
-function mixPixels() {
-  const swaps = BASE_MIX_RATE * mixBoost;
-  for (let i=0;i<swaps;i++) {
-    if (grid.length < 2) return;
-    const a = Math.floor(Math.random()*grid.length);
-    const b = Math.floor(Math.random()*grid.length);
-    [grid[a].x,grid[b].x] = [grid[b].x,grid[a].x];
-    [grid[a].y,grid[b].y] = [grid[b].y,grid[a].y];
-  }
-  mixBoost *= 0.97; // decay shake influence
-}
-
-/* ------------ RENDER ------------ */
-function render() {
-  mixCtx.clearRect(0,0,GRID,GRID);
-  grid.forEach(p => {
-    mixCtx.fillStyle = rgb(p);
-    mixCtx.fillRect(p.x,p.y,1,1);
+function drawContainer() {
+  cCtx.clearRect(0,0,SIZE,SIZE);
+  pixels.forEach((p,i)=>{
+    const x = i % SIZE;
+    const y = SIZE - 1 - Math.floor(i / SIZE);
+    cCtx.fillStyle = rgb(p);
+    cCtx.fillRect(x,y,1,1);
   });
 }
 
-/* ------------ LOOP ------------ */
-function loop() {
-  mixPixels();
-  render();
-  requestAnimationFrame(loop);
+/* ---------- POUR ---------- */
+function pour(color) {
+  for (let i=0;i<POUR_RATE;i++) {
+    if (pixels.length >= MAX_PIXELS) return;
+    pixels.push({...color});
+  }
+  drawContainer();
 }
 
-/* ------------ SUBMIT ------------ */
+/* ---------- MIXING ---------- */
+function mixPixels() {
+  for (let i=0;i<pixels.length;i++) {
+    const j = Math.floor(Math.random()*pixels.length);
+    [pixels[i], pixels[j]] = [pixels[j], pixels[i]];
+  }
+  drawContainer();
+}
+
+function settle() {
+  if (!pixels.length) return;
+  let r=0,g=0,b=0;
+  pixels.forEach(p=>{ r+=p.r; g+=p.g; b+=p.b; });
+  const avg = {
+    r:(r/pixels.length)|0,
+    g:(g/pixels.length)|0,
+    b:(b/pixels.length)|0
+  };
+  pixels = pixels.map(()=>avg);
+  drawContainer();
+}
+
+/* ---------- SUBMIT ---------- */
 function submit() {
-  if (grid.length < MAX_PIXELS * 0.7) {
-    document.getElementById("result").textContent = "Fill the palette more";
+  if (!pixels.length) {
+    document.getElementById("result").textContent = "Container empty";
     return;
   }
 
-  const tolerance = Math.max(80 - level, 30);
-  if (diff(avgColor(), targetColor) <= tolerance) {
+  let r=0,g=0,b=0;
+  pixels.forEach(p=>{ r+=p.r; g+=p.g; b+=p.b; });
+  const avg = { r:r/pixels.length, g:g/pixels.length, b:b/pixels.length };
+
+  const diff =
+    Math.abs(avg.r-targetColor.r) +
+    Math.abs(avg.g-targetColor.g) +
+    Math.abs(avg.b-targetColor.b);
+
+  const tolerance = Math.max(90 - level, 40);
+
+  if (diff <= tolerance) {
     document.getElementById("result").textContent = "✔ Match!";
     level++;
     setTimeout(startLevel, 900);
   } else {
-    document.getElementById("result").textContent = "✖ Not quite";
+    document.getElementById("result").textContent = "✖ Off color";
   }
 }
 
-/* ------------ INPUT ------------ */
-["btnA","btnB"].forEach((id,i)=>{
-  const btn = document.getElementById(id);
-  btn.addEventListener("pointerdown",()=> {
-    pouringInterval = setInterval(()=>pour(colors[i]),50);
+/* ---------- INPUT ---------- */
+function hold(btn, color) {
+  btn.addEventListener("pointerdown", ()=>{
+    pouring = setInterval(()=>pour(color),50);
   });
-  btn.addEventListener("pointerup",()=>clearInterval(pouringInterval));
-  btn.addEventListener("pointerleave",()=>clearInterval(pouringInterval));
-});
+  btn.addEventListener("pointerup", ()=>clearInterval(pouring));
+  btn.addEventListener("pointerleave", ()=>clearInterval(pouring));
+}
 
-/* ------------ SHAKE ------------ */
+hold(redBtn, COLORS.red);
+hold(greenBtn, COLORS.green);
+hold(blueBtn, COLORS.blue);
+
+/* ---------- SHAKE ---------- */
 if (window.DeviceMotionEvent) {
-  window.addEventListener("devicemotion", e => {
+  window.addEventListener("devicemotion", e=>{
     const a = e.accelerationIncludingGravity;
     if (!a) return;
+
     const force = Math.abs(a.x)+Math.abs(a.y)+Math.abs(a.z);
-    if (force > 28) mixBoost = Math.min(4, mixBoost + 0.5);
+    if (force > SHAKE_THRESHOLD) {
+      shaking = true;
+      mixPixels();
+      clearTimeout(settleTimeout);
+      settleTimeout = setTimeout(()=>{
+        shaking = false;
+        settle();
+      }, 600);
+    }
   });
 }
 
-/* ------------ START ------------ */
+/* ---------- START ---------- */
 startLevel();
-loop();
 </script>
 
 </body>
