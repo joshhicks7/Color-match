@@ -77,18 +77,15 @@ function mulberry32(a) {
 function getTarget(level){
   const rand = mulberry32(level); // deterministic per level
   const primaryColors = ['r','g','b'];
-  
-  // pick primary color
   const primaryIndex = Math.floor(rand()*3);
   const primary = primaryColors[primaryIndex];
-  
-  // difficulty factor for secondary colors
+
   const difficulty = Math.min(1, level/50); 
   const secondary1 = (rand()*difficulty*255)|0;
   const secondary2 = (rand()*difficulty*255)|0;
 
   let target = {r:0,g:0,b:0};
-  target[primary] = 255; // primary full
+  target[primary] = 255; 
   const others = primaryColors.filter(c=>c!==primary);
   target[others[0]] = secondary1;
   target[others[1]] = secondary2;
@@ -114,7 +111,7 @@ updateLevel();
 /* ---------- FILL LOOP ---------- */
 setInterval(()=>{
   if(!holding || fillIndex>=PIXELS) return;
-  pixels[fillIndex++] = holding;
+  pixels[fillIndex++] = {...COLORS[holding]}; // store RGB directly
   drawContainer();
   updatePreview();
 },40);
@@ -149,21 +146,22 @@ function drawContainer(){
   for(let i=0;i<PIXELS;i++){
     const x = (i%SIZE)*px;
     const y = Math.floor(i/SIZE)*px;
-    const key = pixels[i];
-    ctx.fillStyle = key ? colorKeyToRgb(key) : "#222";
-    ctx.fillRect(x,y,px,px);
+    const color = pixels[i];
+    if(color){
+      ctx.fillStyle = `rgb(${color.r},${color.g},${color.b})`;
+      ctx.fillRect(x,y,px,px);
+    } else {
+      ctx.fillStyle = "#222";
+      ctx.fillRect(x,y,px,px);
+    }
   }
-}
-
-function colorKeyToRgb(key){
-  return key==='avg' ? `rgb(${avgMix.r},${avgMix.g},${avgMix.b})` : `rgb(${COLORS[key].r},${COLORS[key].g},${COLORS[key].b})`;
 }
 
 function updatePreview(){
   let r=0,g=0,b=0,count=0;
   for(let i=0;i<fillIndex;i++){
-    const c = COLORS[pixels[i]];
-    r+=c.r; g+=c.g; b+=c.b; count++;
+    const c = pixels[i];
+    if(c){ r+=c.r; g+=c.g; b+=c.b; count++; }
   }
   if(count>0){
     r=Math.round(r/count); g=Math.round(g/count); b=Math.round(b/count);
@@ -171,32 +169,17 @@ function updatePreview(){
   fillCanvas(mixPreview,{r,g,b});
 }
 
-let avgMix={r:0,g:0,b:0};
 function mixContainer(){
   if(fillIndex===0) return;
   let r=0,g=0,b=0;
   for(let i=0;i<fillIndex;i++){
-    const c = COLORS[pixels[i]];
+    const c = pixels[i];
     r+=c.r; g+=c.g; b+=c.b;
   }
-  avgMix = {r:Math.round(r/fillIndex), g:Math.round(g/fillIndex), b:Math.round(b/fillIndex)};
-  for(let i=0;i<fillIndex;i++) pixels[i]='avg';
-  drawContainerUniform();
-  updatePreviewUniform();
-}
-
-function drawContainerUniform(){
-  const px = container.width/SIZE;
-  ctx.fillStyle = `rgb(${avgMix.r},${avgMix.g},${avgMix.b})`;
-  for(let i=0;i<fillIndex;i++){
-    const x = (i%SIZE)*px;
-    const y = Math.floor(i/SIZE)*px;
-    ctx.fillRect(x,y,px,px);
-  }
-}
-
-function updatePreviewUniform(){
-  fillCanvas(mixPreview,avgMix);
+  const avg = {r:Math.round(r/fillIndex), g:Math.round(g/fillIndex), b:Math.round(b/fillIndex)};
+  for(let i=0;i<fillIndex;i++) pixels[i] = {...avg};
+  drawContainer();
+  updatePreview();
 }
 
 function resetContainer(){
@@ -211,7 +194,7 @@ function checkMatch(){
   const mix = mixPreview.getContext("2d").getImageData(0,0,1,1).data;
   const diff = Math.abs(mix[0]-target.r)+Math.abs(mix[1]-target.g)+Math.abs(mix[2]-target.b);
   const accuracy = 100-(diff/(255*3)*100);
-  if(accuracy>=95){
+  if(accuracy>=90){ // success threshold 90%
     message.textContent=`🎉 Level Complete! (${accuracy.toFixed(1)}%)`;
     level++;
     target = getTarget(level);
