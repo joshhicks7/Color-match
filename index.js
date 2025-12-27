@@ -1,7 +1,7 @@
 /* ---------- CONFIG ---------- */
 const SIZE = 24;
 const PIXELS = SIZE * SIZE;
-const SHAKE_THRESHOLD = 15; // Lowered for better sensitivity
+const SHAKE_THRESHOLD = 50; // Lowered for better sensitivity
 const SHAKE_COOLDOWN = 500; // Milliseconds between shake detections
 const WIN_ACCURACY = 95; // Minimum accuracy to win
 
